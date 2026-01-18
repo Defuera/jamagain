@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Musician,
   SessionConfig,
@@ -13,17 +13,62 @@ import {
   MAX_BPM,
 } from '@/lib/types';
 
+const STORAGE_KEY = 'jam-session-config';
+
+interface SavedConfig {
+  musicianCount: number;
+  names: string[];
+  bpm: number;
+  barsPerPhase: number;
+}
+
+function getDefaultNames(): string[] {
+  return Array(MAX_MUSICIANS).fill('').map((_, i) => `Player ${i + 1}`);
+}
+
+function loadSavedConfig(): SavedConfig | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return null;
+}
+
+function saveConfig(config: SavedConfig) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+  } catch {}
+}
+
+function clearSavedConfig() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {}
+}
+
 interface SetupScreenProps {
   onStart: (config: SessionConfig) => void;
 }
 
 export function SetupScreen({ onStart }: SetupScreenProps) {
   const [musicianCount, setMusicianCount] = useState(4);
-  const [names, setNames] = useState<string[]>(
-    Array(MAX_MUSICIANS).fill('').map((_, i) => `Player ${i + 1}`)
-  );
+  const [names, setNames] = useState<string[]>(getDefaultNames());
   const [bpm, setBpm] = useState(DEFAULT_BPM);
   const [barsPerPhase, setBarsPerPhase] = useState(DEFAULT_BARS_PER_PHASE);
+  const [loaded, setLoaded] = useState(false);
+
+  // Load saved config on mount
+  useEffect(() => {
+    const saved = loadSavedConfig();
+    if (saved) {
+      setMusicianCount(saved.musicianCount);
+      setNames(saved.names);
+      setBpm(saved.bpm);
+      setBarsPerPhase(saved.barsPerPhase);
+    }
+    setLoaded(true);
+  }, []);
 
   const handleCountChange = (delta: number) => {
     const newCount = Math.max(MIN_MUSICIANS, Math.min(MAX_MUSICIANS, musicianCount + delta));
@@ -36,7 +81,18 @@ export function SetupScreen({ onStart }: SetupScreenProps) {
     setNames(newNames);
   };
 
+  const handleReset = () => {
+    setMusicianCount(4);
+    setNames(getDefaultNames());
+    setBpm(DEFAULT_BPM);
+    setBarsPerPhase(DEFAULT_BARS_PER_PHASE);
+    clearSavedConfig();
+  };
+
   const handleStart = () => {
+    // Save config before starting
+    saveConfig({ musicianCount, names, bpm, barsPerPhase });
+
     const musicians: Musician[] = Array.from({ length: musicianCount }, (_, i) => ({
       id: i + 1,
       name: names[i] || `Player ${i + 1}`,
@@ -50,6 +106,15 @@ export function SetupScreen({ onStart }: SetupScreenProps) {
       barsPerPhase,
     });
   };
+
+  // Don't render until we've loaded saved config
+  if (!loaded) {
+    return (
+      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+        <div className="text-gray-400">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center p-4">
@@ -137,14 +202,23 @@ export function SetupScreen({ onStart }: SetupScreenProps) {
           </div>
         </div>
 
-        {/* Start button */}
-        <button
-          onClick={handleStart}
-          className="w-full py-4 bg-green-600 hover:bg-green-500 rounded-xl text-xl font-bold transition-colors flex items-center justify-center gap-2"
-        >
-          <span className="text-2xl">▶</span>
-          START JAM
-        </button>
+        {/* Buttons */}
+        <div className="space-y-3">
+          <button
+            onClick={handleStart}
+            className="w-full py-4 bg-green-600 hover:bg-green-500 rounded-xl text-xl font-bold transition-colors flex items-center justify-center gap-2"
+          >
+            <span className="text-2xl">▶</span>
+            START JAM
+          </button>
+
+          <button
+            onClick={handleReset}
+            className="w-full py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm text-gray-300 transition-colors"
+          >
+            Reset to defaults
+          </button>
+        </div>
       </div>
     </div>
   );

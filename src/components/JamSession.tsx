@@ -48,6 +48,12 @@ export function JamSession({ config: initialConfig, onStop }: JamSessionProps) {
     onStop();
   };
 
+  const handleRestart = () => {
+    prevStatesRef.current.clear();
+    session.stop();
+    setTimeout(() => session.start(), 50);
+  };
+
   return (
     <div className="fixed inset-0 bg-gray-900 text-white overflow-hidden">
       {/* Info overlay - top left corner */}
@@ -98,17 +104,26 @@ export function JamSession({ config: initialConfig, onStop }: JamSessionProps) {
             </button>
           </div>
 
-          {/* Audio cues toggle */}
-          <button
-            onClick={() => setAudioCuesEnabled(!audioCuesEnabled)}
-            className={`text-xs px-2 py-1 rounded transition-colors ${
-              audioCuesEnabled
-                ? 'bg-green-600/50 text-green-300'
-                : 'bg-gray-600/50 text-gray-400'
-            }`}
-          >
-            {audioCuesEnabled ? '🔔 Cues ON' : '🔕 Cues OFF'}
-          </button>
+          {/* Bottom controls */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setAudioCuesEnabled(!audioCuesEnabled)}
+              className={`text-xs px-2 py-1 rounded transition-colors ${
+                audioCuesEnabled
+                  ? 'bg-green-600/50 text-green-300'
+                  : 'bg-gray-600/50 text-gray-400'
+              }`}
+            >
+              {audioCuesEnabled ? '🔔 Cues' : '🔕 Cues'}
+            </button>
+
+            <button
+              onClick={handleRestart}
+              className="text-xs px-2 py-1 rounded bg-blue-600/50 text-blue-300 hover:bg-blue-600/70 transition-colors"
+            >
+              ↺ Restart
+            </button>
+          </div>
         </div>
       </div>
 
