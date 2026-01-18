@@ -1,0 +1,151 @@
+'use client';
+
+import { useState } from 'react';
+import {
+  Musician,
+  SessionConfig,
+  MUSICIAN_COLORS,
+  DEFAULT_BPM,
+  DEFAULT_BARS_PER_PHASE,
+  MIN_MUSICIANS,
+  MAX_MUSICIANS,
+  MIN_BPM,
+  MAX_BPM,
+} from '@/lib/types';
+
+interface SetupScreenProps {
+  onStart: (config: SessionConfig) => void;
+}
+
+export function SetupScreen({ onStart }: SetupScreenProps) {
+  const [musicianCount, setMusicianCount] = useState(4);
+  const [names, setNames] = useState<string[]>(
+    Array(MAX_MUSICIANS).fill('').map((_, i) => `Player ${i + 1}`)
+  );
+  const [bpm, setBpm] = useState(DEFAULT_BPM);
+  const [barsPerPhase, setBarsPerPhase] = useState(DEFAULT_BARS_PER_PHASE);
+
+  const handleCountChange = (delta: number) => {
+    const newCount = Math.max(MIN_MUSICIANS, Math.min(MAX_MUSICIANS, musicianCount + delta));
+    setMusicianCount(newCount);
+  };
+
+  const handleNameChange = (index: number, value: string) => {
+    const newNames = [...names];
+    newNames[index] = value;
+    setNames(newNames);
+  };
+
+  const handleStart = () => {
+    const musicians: Musician[] = Array.from({ length: musicianCount }, (_, i) => ({
+      id: i + 1,
+      name: names[i] || `Player ${i + 1}`,
+      color: MUSICIAN_COLORS[i],
+      state: 'inactive',
+    }));
+
+    onStart({
+      musicians,
+      bpm,
+      barsPerPhase,
+    });
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center p-4">
+      <div className="w-full max-w-md space-y-8">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold">Jam Session</h1>
+          <p className="text-gray-400 mt-2">Set up your jam session</p>
+        </div>
+
+        {/* Musician count */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <label className="text-lg">Musicians</label>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => handleCountChange(-1)}
+                disabled={musicianCount <= MIN_MUSICIANS}
+                className="w-10 h-10 rounded-full bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-xl font-bold"
+              >
+                −
+              </button>
+              <span className="text-2xl font-bold w-8 text-center">{musicianCount}</span>
+              <button
+                onClick={() => handleCountChange(1)}
+                disabled={musicianCount >= MAX_MUSICIANS}
+                className="w-10 h-10 rounded-full bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-xl font-bold"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          {/* Musician names */}
+          <div className="space-y-2">
+            {Array.from({ length: musicianCount }, (_, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <div
+                  className="w-4 h-4 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: MUSICIAN_COLORS[i] }}
+                />
+                <input
+                  type="text"
+                  value={names[i]}
+                  onChange={(e) => handleNameChange(i, e.target.value)}
+                  placeholder={`Player ${i + 1}`}
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Settings */}
+        <div className="space-y-4 pt-4 border-t border-gray-700">
+          <div className="flex items-center justify-between">
+            <label className="text-lg">Tempo</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={bpm}
+                onChange={(e) => setBpm(Math.max(MIN_BPM, Math.min(MAX_BPM, Number(e.target.value))))}
+                min={MIN_BPM}
+                max={MAX_BPM}
+                className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-center focus:outline-none focus:border-blue-500"
+              />
+              <span className="text-gray-400">BPM</span>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <label className="text-lg">Bars per phase</label>
+            <div className="flex items-center gap-2">
+              <select
+                value={barsPerPhase}
+                onChange={(e) => setBarsPerPhase(Number(e.target.value))}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+              >
+                {[2, 4, 8, 16].map((n) => (
+                  <option key={n} value={n}>
+                    {n} bars
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Start button */}
+        <button
+          onClick={handleStart}
+          className="w-full py-4 bg-green-600 hover:bg-green-500 rounded-xl text-xl font-bold transition-colors flex items-center justify-center gap-2"
+        >
+          <span className="text-2xl">▶</span>
+          START JAM
+        </button>
+      </div>
+    </div>
+  );
+}
