@@ -37,6 +37,7 @@ npm run lint     # Run ESLint
 
 - `src/app/` - App Router pages and layouts
 - `src/components/` - Reusable React components
+- `docs/MVP.md` - Full MVP specification
 
 ## Code Conventions
 
