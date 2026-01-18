@@ -18,17 +18,25 @@ export function JamSession({ config, onStop }: JamSessionProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-4">
-      {/* Header info */}
-      <div className="text-center mb-8">
-        <h1 className="text-2xl font-bold">Jam Session</h1>
-        <p className="text-gray-400 mt-1">
-          {config.bpm} BPM • {config.barsPerPhase} bars per phase
-        </p>
-        <p className="text-blue-400 mt-1">{session.phaseInfo}</p>
+    <div className="fixed inset-0 bg-gray-900 text-white overflow-hidden">
+      {/* Info overlay - top left corner */}
+      <div className="absolute top-4 left-4 z-10 bg-black/50 backdrop-blur-sm rounded-lg px-4 py-2 flex items-center gap-3">
+        <button
+          onClick={handleStop}
+          className="text-gray-400 hover:text-white transition-colors"
+          aria-label="Back to setup"
+        >
+          ✕
+        </button>
+        <div>
+          <div className="text-sm text-gray-300">
+            {config.bpm} BPM • {config.barsPerPhase} bars/phase
+          </div>
+          <div className="text-blue-400 font-medium">{session.phaseInfo}</div>
+        </div>
       </div>
 
-      {/* Main circle visualization */}
+      {/* Fullscreen circle */}
       <JamCircle
         musicians={session.musicians}
         currentBeat={session.currentBeat}
@@ -37,41 +45,6 @@ export function JamSession({ config, onStop }: JamSessionProps) {
         isPaused={session.isPaused}
         onTogglePlayPause={session.togglePlayPause}
       />
-
-      {/* Controls */}
-      <div className="mt-8 flex gap-4">
-        <button
-          onClick={session.togglePlayPause}
-          className={`px-8 py-3 rounded-xl text-lg font-bold transition-colors ${
-            session.isPlaying && !session.isPaused
-              ? 'bg-yellow-600 hover:bg-yellow-500'
-              : 'bg-green-600 hover:bg-green-500'
-          }`}
-        >
-          {session.isPlaying && !session.isPaused ? '⏸ PAUSE' : '▶ PLAY'}
-        </button>
-        <button
-          onClick={handleStop}
-          className="px-8 py-3 bg-red-600 hover:bg-red-500 rounded-xl text-lg font-bold transition-colors"
-        >
-          ⏹ STOP
-        </button>
-      </div>
-
-      {/* Status info */}
-      <div className="mt-6 text-gray-400 text-sm">
-        {session.isPlaying ? (
-          session.isPaused ? (
-            <span>Paused at bar {session.currentBar}</span>
-          ) : (
-            <span>
-              Beat {session.currentBeat} of bar {session.currentBar}
-            </span>
-          )
-        ) : (
-          <span>Press PLAY to start the jam</span>
-        )}
-      </div>
     </div>
   );
 }

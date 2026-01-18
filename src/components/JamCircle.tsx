@@ -19,10 +19,11 @@ export function JamCircle({
   isPaused,
   onTogglePlayPause,
 }: JamCircleProps) {
-  const size = 400;
-  const center = size / 2;
-  const radius = 160;
-  const innerRadius = 70;
+  // Use viewBox for scaling, actual size controlled by CSS
+  const viewBoxSize = 400;
+  const center = viewBoxSize / 2;
+  const radius = 180;
+  const innerRadius = 60;
 
   // Generate SVG path for a sector
   const getSectorPath = (index: number, total: number) => {
@@ -73,8 +74,12 @@ export function JamCircle({
   };
 
   return (
-    <div className="relative">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+    <div className="relative w-full h-full flex items-center justify-center">
+      <svg
+        className="w-full h-full max-w-[min(100vw,100vh)] max-h-[min(100vw,100vh)]"
+        viewBox={`0 0 ${viewBoxSize} ${viewBoxSize}`}
+        preserveAspectRatio="xMidYMid meet"
+      >
         {/* Sectors */}
         {musicians.map((musician, index) => {
           const path = getSectorPath(index, musicians.length);
@@ -104,14 +109,14 @@ export function JamCircle({
               {/* Musician name */}
               <text
                 x={labelPos.x}
-                y={labelPos.y - 8}
+                y={labelPos.y - 10}
                 textAnchor="middle"
                 dominantBaseline="middle"
                 fill="white"
-                fontSize="14"
+                fontSize="18"
                 fontWeight="bold"
                 style={{
-                  textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                  textShadow: '0 2px 4px rgba(0,0,0,0.8)',
                   opacity: styles.opacity,
                 }}
               >
@@ -122,13 +127,13 @@ export function JamCircle({
               {isSoloing && (
                 <text
                   x={labelPos.x}
-                  y={labelPos.y + 12}
+                  y={labelPos.y + 14}
                   textAnchor="middle"
                   dominantBaseline="middle"
                   fill="#fbbf24"
-                  fontSize="12"
+                  fontSize="14"
                   fontWeight="bold"
-                  style={{ textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                  style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}
                 >
                   SOLO
                 </text>
@@ -138,13 +143,13 @@ export function JamCircle({
               {isStarting && (
                 <text
                   x={labelPos.x}
-                  y={labelPos.y + 12}
+                  y={labelPos.y + 14}
                   textAnchor="middle"
                   dominantBaseline="middle"
                   fill="#ffffff"
-                  fontSize="11"
+                  fontSize="12"
                   fontWeight="bold"
-                  style={{ textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                  style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}
                   className="animate-pulse"
                 >
                   GET READY
@@ -154,12 +159,12 @@ export function JamCircle({
           );
         })}
 
-        {/* Center circle with controls */}
+        {/* Center circle background */}
         <circle
           cx={center}
           cy={center}
-          r={innerRadius - 5}
-          fill="#1f2937"
+          r={innerRadius - 3}
+          fill="#111827"
           stroke="#374151"
           strokeWidth="2"
         />
@@ -167,7 +172,7 @@ export function JamCircle({
         {/* Beat indicator dots */}
         {[1, 2, 3, 4].map((beat) => {
           const angle = ((beat - 1) / 4) * 2 * Math.PI - Math.PI / 2;
-          const dotRadius = 25;
+          const dotRadius = 42;
           const x = center + dotRadius * Math.cos(angle);
           const y = center + dotRadius * Math.sin(angle);
           const isActive = isPlaying && !isPaused && currentBeat === beat;
@@ -177,35 +182,34 @@ export function JamCircle({
               key={beat}
               cx={x}
               cy={y}
-              r={6}
+              r={5}
               fill={isActive ? (beat === 1 ? '#f97316' : '#60a5fa') : '#4b5563'}
               style={{ transition: 'fill 0.1s' }}
             />
           );
         })}
-
-        {/* Bar counter */}
-        <text
-          x={center}
-          y={center + 5}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fill="white"
-          fontSize="20"
-          fontWeight="bold"
-        >
-          {isPlaying ? `Bar ${currentBar}` : 'Ready'}
-        </text>
       </svg>
 
-      {/* Play/Pause button overlay */}
-      <button
-        onClick={onTogglePlayPause}
-        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full bg-transparent hover:bg-white/10 transition-colors flex items-center justify-center"
-        aria-label={isPlaying && !isPaused ? 'Pause' : 'Play'}
-      >
-        {/* Invisible hit area, visual is the center circle */}
-      </button>
+      {/* Center controls overlay */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2">
+        {/* Bar counter */}
+        <div className="text-white text-lg font-bold mb-1">
+          {isPlaying ? `Bar ${currentBar}` : 'Ready'}
+        </div>
+
+        {/* Play/Pause button */}
+        <button
+          onClick={onTogglePlayPause}
+          className={`w-12 h-12 rounded-full flex items-center justify-center text-xl transition-colors ${
+            isPlaying && !isPaused
+              ? 'bg-yellow-600 hover:bg-yellow-500'
+              : 'bg-green-600 hover:bg-green-500'
+          }`}
+          aria-label={isPlaying && !isPaused ? 'Pause' : 'Play'}
+        >
+          {isPlaying && !isPaused ? '⏸' : '▶'}
+        </button>
+      </div>
     </div>
   );
 }
