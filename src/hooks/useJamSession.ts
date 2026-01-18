@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useMetronome } from './useMetronome';
 import {
   Musician,
@@ -19,8 +19,14 @@ interface JamSessionState {
 }
 
 export function useJamSession(config: SessionConfig) {
-  const { bpm, barsPerPhase } = config;
+  const { bpm } = config;
   const totalMusicians = config.musicians.length;
+
+  // Use ref for barsPerPhase so changes take effect immediately
+  const barsPerPhaseRef = useRef(config.barsPerPhase);
+  useEffect(() => {
+    barsPerPhaseRef.current = config.barsPerPhase;
+  }, [config.barsPerPhase]);
 
   const [state, setState] = useState<JamSessionState>({
     isPlaying: false,
@@ -34,6 +40,7 @@ export function useJamSession(config: SessionConfig) {
   // Calculate musician states based on current phase
   const calculateMusicianStates = useCallback(
     (bar: number, beat: number): Musician[] => {
+      const barsPerPhase = barsPerPhaseRef.current;
       const beatsPerPhase = barsPerPhase * BEATS_PER_BAR;
       const totalBeats = (bar - 1) * BEATS_PER_BAR + beat;
       const currentPhase = Math.floor((totalBeats - 1) / beatsPerPhase) + 1;
@@ -82,13 +89,13 @@ export function useJamSession(config: SessionConfig) {
         return { ...musician, state: newState };
       });
     },
-    [config.musicians, barsPerPhase, totalMusicians]
+    [config.musicians, totalMusicians]
   );
 
   // Handle beat from metronome
   const onBeat = useCallback(
     (beat: number, bar: number) => {
-      const beatsPerPhase = barsPerPhase * BEATS_PER_BAR;
+      const beatsPerPhase = barsPerPhaseRef.current * BEATS_PER_BAR;
       const totalBeats = (bar - 1) * BEATS_PER_BAR + beat;
       const currentPhase = Math.floor((totalBeats - 1) / beatsPerPhase) + 1;
 
@@ -102,7 +109,7 @@ export function useJamSession(config: SessionConfig) {
         musicians: updatedMusicians,
       }));
     },
-    [barsPerPhase, calculateMusicianStates]
+    [calculateMusicianStates]
   );
 
   const metronome = useMetronome({ bpm, onBeat });

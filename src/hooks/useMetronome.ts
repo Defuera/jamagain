@@ -16,6 +16,18 @@ export function useMetronome({ bpm, onBeat }: MetronomeConfig) {
   const timerIdRef = useRef<number | null>(null);
   const isPlayingRef = useRef(false);
 
+  // Use refs to always have latest values in scheduler
+  const bpmRef = useRef(bpm);
+  const onBeatRef = useRef(onBeat);
+
+  useEffect(() => {
+    bpmRef.current = bpm;
+  }, [bpm]);
+
+  useEffect(() => {
+    onBeatRef.current = onBeat;
+  }, [onBeat]);
+
   // Initialize audio context
   const getAudioContext = useCallback(() => {
     if (!audioContextRef.current) {
@@ -50,7 +62,7 @@ export function useMetronome({ bpm, onBeat }: MetronomeConfig) {
   // Schedule beats ahead of time for precision
   const scheduler = useCallback(() => {
     const ctx = getAudioContext();
-    const secondsPerBeat = 60.0 / bpm;
+    const secondsPerBeat = 60.0 / bpmRef.current;
     const scheduleAheadTime = 0.1; // Schedule 100ms ahead
 
     while (nextBeatTimeRef.current < ctx.currentTime + scheduleAheadTime) {
@@ -58,7 +70,7 @@ export function useMetronome({ bpm, onBeat }: MetronomeConfig) {
       playClick(nextBeatTimeRef.current, isAccent);
 
       // Notify callback
-      onBeat(currentBeatRef.current, currentBarRef.current);
+      onBeatRef.current(currentBeatRef.current, currentBarRef.current);
 
       // Advance beat/bar counters
       currentBeatRef.current++;
@@ -69,7 +81,7 @@ export function useMetronome({ bpm, onBeat }: MetronomeConfig) {
 
       nextBeatTimeRef.current += secondsPerBeat;
     }
-  }, [bpm, onBeat, playClick, getAudioContext]);
+  }, [playClick, getAudioContext]);
 
   const start = useCallback(() => {
     if (isPlayingRef.current) return;
