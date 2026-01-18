@@ -24,25 +24,59 @@ export function useMetronome({ bpm, onBeat }: MetronomeConfig) {
     return audioContextRef.current;
   }, []);
 
-  // Play a click sound
+  // Play a wooden click sound (like a real metronome)
   const playClick = useCallback((time: number, isAccent: boolean) => {
     const ctx = getAudioContext();
-    const oscillator = ctx.createOscillator();
-    const gainNode = ctx.createGain();
 
-    oscillator.connect(gainNode);
-    gainNode.connect(ctx.destination);
+    // Main tone - sine wave with pitch drop for woody click
+    const osc = ctx.createOscillator();
+    const oscGain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
 
-    // Higher pitch for accent (beat 1), lower for other beats
-    oscillator.frequency.value = isAccent ? 1000 : 800;
-    oscillator.type = 'square';
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(isAccent ? 1800 : 1500, time);
+    osc.frequency.exponentialRampToValueAtTime(isAccent ? 400 : 350, time + 0.02);
 
-    // Quick decay envelope
-    gainNode.gain.setValueAtTime(isAccent ? 0.3 : 0.15, time);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+    filter.type = 'bandpass';
+    filter.frequency.value = isAccent ? 1200 : 1000;
+    filter.Q.value = 2;
 
-    oscillator.start(time);
-    oscillator.stop(time + 0.05);
+    osc.connect(filter);
+    filter.connect(oscGain);
+    oscGain.connect(ctx.destination);
+
+    // Sharp attack, quick decay
+    oscGain.gain.setValueAtTime(0, time);
+    oscGain.gain.linearRampToValueAtTime(isAccent ? 0.4 : 0.25, time + 0.002);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, time + 0.08);
+
+    osc.start(time);
+    osc.stop(time + 0.1);
+
+    // Click transient - short noise burst for attack
+    const bufferSize = ctx.sampleRate * 0.015;
+    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const noiseData = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      noiseData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.1));
+    }
+
+    const noise = ctx.createBufferSource();
+    const noiseFilter = ctx.createBiquadFilter();
+    const noiseGain = ctx.createGain();
+
+    noise.buffer = noiseBuffer;
+    noiseFilter.type = 'highpass';
+    noiseFilter.frequency.value = isAccent ? 2000 : 2500;
+
+    noise.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(ctx.destination);
+
+    noiseGain.gain.setValueAtTime(isAccent ? 0.15 : 0.08, time);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, time + 0.02);
+
+    noise.start(time);
   }, [getAudioContext]);
 
   // Schedule beats ahead of time for precision
