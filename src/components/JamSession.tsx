@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { SessionConfig, MIN_BPM, MAX_BPM } from '@/lib/types';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { SessionConfig, Sample, MIN_BPM, MAX_BPM } from '@/lib/types';
 import { useJamSession } from '@/hooks/useJamSession';
 import { useAudioCues } from '@/hooks/useAudioCues';
+import { useSampler } from '@/hooks/useSampler';
+import { useVirtualPlayers } from '@/hooks/useVirtualPlayers';
 import { JamCircle } from './JamCircle';
 
 interface JamSessionProps {
@@ -15,17 +17,101 @@ export function JamSession({ config: initialConfig, onStop }: JamSessionProps) {
   const [bpm, setBpm] = useState(initialConfig.bpm);
   const [barsPerPhase, setBarsPerPhase] = useState(initialConfig.barsPerPhase);
   const [audioCuesEnabled, setAudioCuesEnabled] = useState(true);
+  const [micPermissionGranted, setMicPermissionGranted] = useState(false);
+  const [recordedSamples, setRecordedSamples] = useState<Sample[]>([]);
 
-  const config = { ...initialConfig, bpm, barsPerPhase };
-  const session = useJamSession(config);
+  const config = useMemo(() => ({
+    ...initialConfig,
+    bpm,
+    barsPerPhase,
+  }), [initialConfig, bpm, barsPerPhase]);
+
+  const realMusicianCount = initialConfig.musicians.length;
+  const sampler = useSampler();
+  const virtualPlayersHook = useVirtualPlayers(realMusicianCount);
   const { playGetReady, playStart } = useAudioCues();
+
+  // Combine real musicians with virtual players
+  const allMusicians = useMemo(() => {
+    return [...initialConfig.musicians, ...virtualPlayersHook.virtualPlayers];
+  }, [initialConfig.musicians, virtualPlayersHook.virtualPlayers]);
+
+  // Sampling callbacks
+  const samplingCallbacks = useMemo(() => ({
+    onStartRecording: () => {
+      if (config.samplingMode && micPermissionGranted) {
+        sampler.startRecording();
+      }
+    },
+    onStopRecording: async (musicianId: number) => {
+      if (config.samplingMode) {
+        const sample = await sampler.stopRecording(musicianId);
+        if (sample) {
+          setRecordedSamples(prev => [...prev, sample]);
+          // Add virtual player after recording
+          if (virtualPlayersHook.canAddMoreVirtualPlayers) {
+            const vp = virtualPlayersHook.addVirtualPlayer(sample);
+            if (vp) {
+              sampler.playSample(sample, 0.5, true);
+            }
+          }
+        }
+      }
+    },
+    onVirtualPlayerSolo: (musicianId: number) => {
+      // Increase volume for soloing virtual player
+      const vp = virtualPlayersHook.virtualPlayers.find(p => p.id === musicianId);
+      if (vp?.sampleId) {
+        sampler.setSampleVolume(vp.sampleId, 1.0);
+      }
+    },
+    onVirtualPlayerPlay: (musicianId: number) => {
+      // Normal volume for playing virtual player
+      const vp = virtualPlayersHook.virtualPlayers.find(p => p.id === musicianId);
+      if (vp?.sampleId) {
+        sampler.setSampleVolume(vp.sampleId, 0.5);
+      }
+    },
+  }), [config.samplingMode, micPermissionGranted, sampler, virtualPlayersHook]);
+
+  const session = useJamSession(config, allMusicians, samplingCallbacks);
 
   // Track previous states to detect transitions
   const prevStatesRef = useRef<Map<number, string>>(new Map());
 
+  // Request mic permission when sampling mode is enabled
+  useEffect(() => {
+    if (config.samplingMode && !micPermissionGranted) {
+      sampler.requestMicPermission().then(granted => {
+        setMicPermissionGranted(granted);
+      });
+    }
+  }, [config.samplingMode, micPermissionGranted, sampler]);
+
+  // Check if any musician is currently recording - mute everything during recording
+  const isAnyoneRecording = session.musicians.some(m => m.state === 'recording');
+
+  // Mute/unmute sample playback during recording
+  useEffect(() => {
+    if (isAnyoneRecording) {
+      sampler.muteAllSamples();
+    } else {
+      sampler.unmuteAllSamples();
+    }
+  }, [isAnyoneRecording, sampler]);
+
+  // Stop sample playback when paused
+  useEffect(() => {
+    if (session.isPaused) {
+      sampler.stopAllSamples();
+    }
+  }, [session.isPaused, sampler]);
+
   // Detect state transitions for audio cues
   useEffect(() => {
     if (!audioCuesEnabled || !session.isPlaying || session.isPaused) return;
+    // Don't play audio cues while recording to keep the sample clean
+    if (isAnyoneRecording) return;
 
     session.musicians.forEach((musician) => {
       const prevState = prevStatesRef.current.get(musician.id);
@@ -34,23 +120,35 @@ export function JamSession({ config: initialConfig, onStop }: JamSessionProps) {
       if (prevState !== currentState) {
         if (currentState === 'starting') {
           playGetReady();
+        } else if (currentState === 'preparingToRecord') {
+          playGetReady(); // Warning that recording is coming
         } else if (currentState === 'soloing' && prevState === 'starting') {
           playStart();
+        } else if (currentState === 'recording' && prevState === 'preparingToRecord') {
+          // Don't play start cue when recording begins - we're now silent
         }
       }
 
       prevStatesRef.current.set(musician.id, currentState);
     });
-  }, [session.musicians, session.isPlaying, session.isPaused, audioCuesEnabled, playGetReady, playStart]);
+  }, [session.musicians, session.isPlaying, session.isPaused, audioCuesEnabled, isAnyoneRecording, playGetReady, playStart]);
 
   const handleStop = () => {
     session.stop();
+    sampler.stopAllSamples();
+    sampler.clearSamples();
+    virtualPlayersHook.clearVirtualPlayers();
+    setRecordedSamples([]);
     onStop();
   };
 
   const handleRestart = () => {
     prevStatesRef.current.clear();
     session.stop();
+    sampler.stopAllSamples();
+    sampler.clearSamples();
+    virtualPlayersHook.clearVirtualPlayers();
+    setRecordedSamples([]);
     setTimeout(() => session.start(), 50);
   };
 
@@ -105,7 +203,7 @@ export function JamSession({ config: initialConfig, onStop }: JamSessionProps) {
           </div>
 
           {/* Bottom controls */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setAudioCuesEnabled(!audioCuesEnabled)}
               className={`text-xs px-2 py-1 rounded transition-colors ${
@@ -123,6 +221,12 @@ export function JamSession({ config: initialConfig, onStop }: JamSessionProps) {
             >
               ↺ Restart
             </button>
+
+            {config.samplingMode && (
+              <span className="text-xs px-2 py-1 rounded bg-purple-600/50 text-purple-300">
+                🎙 Sampling {recordedSamples.length}/{realMusicianCount}
+              </span>
+            )}
           </div>
         </div>
       </div>

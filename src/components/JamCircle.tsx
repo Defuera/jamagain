@@ -58,14 +58,18 @@ export function JamCircle({
   };
 
   // Get opacity and styles based on state
-  const getStateStyles = (state: Musician['state']) => {
+  const getStateStyles = (state: Musician['state'], isVirtual: boolean) => {
     switch (state) {
       case 'inactive':
         return { opacity: 0.3, filter: 'grayscale(100%)' };
       case 'starting':
         return { opacity: 1, filter: 'none' };
+      case 'preparingToRecord':
+        return { opacity: 1, filter: 'none' };
+      case 'recording':
+        return { opacity: 1, filter: 'none' };
       case 'playing':
-        return { opacity: 0.85, filter: 'none' };
+        return { opacity: isVirtual ? 0.75 : 0.85, filter: 'none' };
       case 'soloing':
         return { opacity: 1, filter: 'none' };
       default:
@@ -84,9 +88,29 @@ export function JamCircle({
         {musicians.map((musician, index) => {
           const path = getSectorPath(index, musicians.length);
           const labelPos = getLabelPosition(index, musicians.length);
-          const styles = getStateStyles(musician.state);
+          const styles = getStateStyles(musician.state, musician.isVirtual);
           const isSoloing = musician.state === 'soloing';
           const isStarting = musician.state === 'starting';
+          const isRecording = musician.state === 'recording';
+          const isPreparingToRecord = musician.state === 'preparingToRecord';
+          const isVirtual = musician.isVirtual;
+
+          // Determine stroke color based on state
+          let strokeColor = 'rgba(0,0,0,0.2)';
+          let strokeWidth = 1;
+          if (isSoloing) {
+            strokeColor = '#ffffff';
+            strokeWidth = 4;
+          } else if (isRecording) {
+            strokeColor = '#ef4444';
+            strokeWidth = 3;
+          } else if (isPreparingToRecord) {
+            strokeColor = '#f97316'; // Orange warning
+            strokeWidth = 3;
+          } else if (isVirtual && musician.state === 'playing') {
+            strokeColor = 'rgba(255,255,255,0.3)';
+            strokeWidth = 2;
+          }
 
           return (
             <g key={musician.id}>
@@ -94,8 +118,9 @@ export function JamCircle({
               <path
                 d={path}
                 fill={musician.color}
-                stroke={isSoloing ? '#ffffff' : 'rgba(0,0,0,0.2)'}
-                strokeWidth={isSoloing ? 4 : 1}
+                stroke={strokeColor}
+                strokeWidth={strokeWidth}
+                strokeDasharray={isVirtual ? '8 4' : 'none'}
                 style={{
                   opacity: styles.opacity,
                   filter: styles.filter,
@@ -103,8 +128,23 @@ export function JamCircle({
                   transformOrigin: `${center}px ${center}px`,
                   transition: 'all 0.3s ease',
                 }}
-                className={isStarting ? 'animate-pulse' : ''}
+                className={isStarting || isRecording || isPreparingToRecord ? 'animate-pulse' : ''}
               />
+
+              {/* Virtual player loop icon */}
+              {isVirtual && (
+                <text
+                  x={labelPos.x}
+                  y={labelPos.y - 26}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fill="rgba(255,255,255,0.7)"
+                  fontSize="14"
+                  style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}
+                >
+                  ↻
+                </text>
+              )}
 
               {/* Musician name */}
               <text
@@ -123,6 +163,40 @@ export function JamCircle({
                 {musician.name}
               </text>
 
+              {/* Preparing to record badge */}
+              {isPreparingToRecord && (
+                <text
+                  x={labelPos.x}
+                  y={labelPos.y + 14}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fill="#f97316"
+                  fontSize="12"
+                  fontWeight="bold"
+                  style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}
+                  className="animate-pulse"
+                >
+                  REC NEXT
+                </text>
+              )}
+
+              {/* Recording badge */}
+              {isRecording && (
+                <text
+                  x={labelPos.x}
+                  y={labelPos.y + 14}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fill="#ef4444"
+                  fontSize="14"
+                  fontWeight="bold"
+                  style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}
+                  className="animate-pulse"
+                >
+                  ● REC
+                </text>
+              )}
+
               {/* Solo badge */}
               {isSoloing && (
                 <text
@@ -130,12 +204,12 @@ export function JamCircle({
                   y={labelPos.y + 14}
                   textAnchor="middle"
                   dominantBaseline="middle"
-                  fill="#fbbf24"
+                  fill={isVirtual ? '#a78bfa' : '#fbbf24'}
                   fontSize="14"
                   fontWeight="bold"
                   style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}
                 >
-                  SOLO
+                  {isVirtual ? 'LOOP' : 'SOLO'}
                 </text>
               )}
 

@@ -5,10 +5,11 @@ import { BEATS_PER_BAR } from '@/lib/types';
 
 interface MetronomeConfig {
   bpm: number;
+  muted?: boolean;
   onBeat: (beat: number, bar: number) => void;
 }
 
-export function useMetronome({ bpm, onBeat }: MetronomeConfig) {
+export function useMetronome({ bpm, muted = false, onBeat }: MetronomeConfig) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const nextBeatTimeRef = useRef(0);
   const currentBeatRef = useRef(1);
@@ -18,11 +19,16 @@ export function useMetronome({ bpm, onBeat }: MetronomeConfig) {
 
   // Use refs to always have latest values in scheduler
   const bpmRef = useRef(bpm);
+  const mutedRef = useRef(muted);
   const onBeatRef = useRef(onBeat);
 
   useEffect(() => {
     bpmRef.current = bpm;
   }, [bpm]);
+
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
 
   useEffect(() => {
     onBeatRef.current = onBeat;
@@ -67,9 +73,12 @@ export function useMetronome({ bpm, onBeat }: MetronomeConfig) {
 
     while (nextBeatTimeRef.current < ctx.currentTime + scheduleAheadTime) {
       const isAccent = currentBeatRef.current === 1;
-      playClick(nextBeatTimeRef.current, isAccent);
+      // Only play click if not muted
+      if (!mutedRef.current) {
+        playClick(nextBeatTimeRef.current, isAccent);
+      }
 
-      // Notify callback
+      // Notify callback (always, even when muted - timing must continue)
       onBeatRef.current(currentBeatRef.current, currentBarRef.current);
 
       // Advance beat/bar counters

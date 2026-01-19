@@ -1,17 +1,28 @@
 // Musician states during a jam session
-export type MusicianState = 'inactive' | 'starting' | 'playing' | 'soloing';
+// preparingToRecord = warning that recording starts next bar
+export type MusicianState = 'inactive' | 'starting' | 'preparingToRecord' | 'recording' | 'playing' | 'soloing';
 
 export interface Musician {
   id: number;
   name: string;
   color: string;
   state: MusicianState;
+  isVirtual: boolean;
+  sampleId?: string; // For virtual players - references the sample they play
+}
+
+export interface Sample {
+  id: string;
+  sourceMusician: number; // Which real player this came from
+  audioBuffer: AudioBuffer;
+  createdAt: number;
 }
 
 export interface SessionConfig {
   musicians: Musician[];
   bpm: number;
   barsPerPhase: number;
+  samplingMode: boolean;
 }
 
 export interface SessionState {
@@ -41,3 +52,5 @@ export const MIN_MUSICIANS = 2;
 export const MAX_MUSICIANS = 8;
 export const MIN_BPM = 60;
 export const MAX_BPM = 200;
+export const VIRTUAL_PLAYERS_COUNT = 2;
+export const RECORDING_BARS = 2; // How many bars to record in sampling mode

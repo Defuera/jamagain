@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Musician,
   SessionConfig,
@@ -20,6 +20,7 @@ interface SavedConfig {
   names: string[];
   bpm: number;
   barsPerPhase: number;
+  samplingMode: boolean;
 }
 
 function getDefaultNames(): string[] {
@@ -52,23 +53,27 @@ interface SetupScreenProps {
 }
 
 export function SetupScreen({ onStart }: SetupScreenProps) {
-  const [musicianCount, setMusicianCount] = useState(4);
-  const [names, setNames] = useState<string[]>(getDefaultNames());
-  const [bpm, setBpm] = useState(DEFAULT_BPM);
-  const [barsPerPhase, setBarsPerPhase] = useState(DEFAULT_BARS_PER_PHASE);
-  const [loaded, setLoaded] = useState(false);
-
-  // Load saved config on mount
-  useEffect(() => {
+  // Load saved config with lazy initializers
+  const [musicianCount, setMusicianCount] = useState(() => {
     const saved = loadSavedConfig();
-    if (saved) {
-      setMusicianCount(saved.musicianCount);
-      setNames(saved.names);
-      setBpm(saved.bpm);
-      setBarsPerPhase(saved.barsPerPhase);
-    }
-    setLoaded(true);
-  }, []);
+    return saved?.musicianCount ?? 4;
+  });
+  const [names, setNames] = useState<string[]>(() => {
+    const saved = loadSavedConfig();
+    return saved?.names ?? getDefaultNames();
+  });
+  const [bpm, setBpm] = useState(() => {
+    const saved = loadSavedConfig();
+    return saved?.bpm ?? DEFAULT_BPM;
+  });
+  const [barsPerPhase, setBarsPerPhase] = useState(() => {
+    const saved = loadSavedConfig();
+    return saved?.barsPerPhase ?? DEFAULT_BARS_PER_PHASE;
+  });
+  const [samplingMode, setSamplingMode] = useState(() => {
+    const saved = loadSavedConfig();
+    return saved?.samplingMode ?? false;
+  });
 
   const handleCountChange = (delta: number) => {
     const newCount = Math.max(MIN_MUSICIANS, Math.min(MAX_MUSICIANS, musicianCount + delta));
@@ -86,35 +91,29 @@ export function SetupScreen({ onStart }: SetupScreenProps) {
     setNames(getDefaultNames());
     setBpm(DEFAULT_BPM);
     setBarsPerPhase(DEFAULT_BARS_PER_PHASE);
+    setSamplingMode(false);
     clearSavedConfig();
   };
 
   const handleStart = () => {
     // Save config before starting
-    saveConfig({ musicianCount, names, bpm, barsPerPhase });
+    saveConfig({ musicianCount, names, bpm, barsPerPhase, samplingMode });
 
     const musicians: Musician[] = Array.from({ length: musicianCount }, (_, i) => ({
       id: i + 1,
       name: names[i] || `Player ${i + 1}`,
       color: MUSICIAN_COLORS[i],
       state: 'inactive',
+      isVirtual: false,
     }));
 
     onStart({
       musicians,
       bpm,
       barsPerPhase,
+      samplingMode,
     });
   };
-
-  // Don't render until we've loaded saved config
-  if (!loaded) {
-    return (
-      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
-        <div className="text-gray-400">Loading...</div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center p-4">
@@ -199,6 +198,30 @@ export function SetupScreen({ onStart }: SetupScreenProps) {
                 ))}
               </select>
             </div>
+          </div>
+
+          {/* Sampling Mode */}
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-lg">Sampling Mode</label>
+              <p className="text-sm text-gray-400">
+                Record loops to create virtual players
+              </p>
+            </div>
+            <button
+              onClick={() => setSamplingMode(!samplingMode)}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                samplingMode ? 'bg-purple-600' : 'bg-gray-600'
+              }`}
+              role="switch"
+              aria-checked={samplingMode}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  samplingMode ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
           </div>
         </div>
 

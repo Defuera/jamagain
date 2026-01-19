@@ -7,20 +7,34 @@ import {
   MusicianState,
   SessionConfig,
   BEATS_PER_BAR,
+  RECORDING_BARS,
 } from '@/lib/types';
 
-interface JamSessionState {
+interface SessionState {
   isPlaying: boolean;
   isPaused: boolean;
   currentBeat: number;
   currentBar: number;
   currentPhase: number;
-  musicians: Musician[];
+  musicianStates: Map<number, MusicianState>;
 }
 
-export function useJamSession(config: SessionConfig) {
-  const { bpm } = config;
-  const totalMusicians = config.musicians.length;
+interface SamplingCallbacks {
+  onStartRecording?: (musicianId: number) => void;
+  onStopRecording?: (musicianId: number) => void;
+  onVirtualPlayerSolo?: (musicianId: number) => void;
+  onVirtualPlayerPlay?: (musicianId: number) => void;
+}
+
+export function useJamSession(
+  config: SessionConfig,
+  allMusicians: Musician[],
+  samplingCallbacks?: SamplingCallbacks
+) {
+  const { bpm, samplingMode } = config;
+  const realMusicians = config.musicians.filter(m => !m.isVirtual);
+  const realMusicianCount = realMusicians.length;
+  const totalMusicians = allMusicians.length;
 
   // Use ref for barsPerPhase so changes take effect immediately
   const barsPerPhaseRef = useRef(config.barsPerPhase);
@@ -28,68 +42,127 @@ export function useJamSession(config: SessionConfig) {
     barsPerPhaseRef.current = config.barsPerPhase;
   }, [config.barsPerPhase]);
 
-  const [state, setState] = useState<JamSessionState>({
-    isPlaying: false,
-    isPaused: false,
-    currentBeat: 1,
-    currentBar: 1,
-    currentPhase: 1,
-    musicians: config.musicians.map((m) => ({ ...m, state: 'inactive' as MusicianState })),
+  // Track which musicians are currently recording
+  const recordingMusicianRef = useRef<number | null>(null);
+
+  // State now tracks musician states in a Map for easy merging
+  const [state, setState] = useState<SessionState>(() => {
+    const initialStates = new Map<number, MusicianState>();
+    allMusicians.forEach(m => initialStates.set(m.id, 'inactive'));
+    return {
+      isPlaying: false,
+      isPaused: false,
+      currentBeat: 1,
+      currentBar: 1,
+      currentPhase: 1,
+      musicianStates: initialStates,
+    };
   });
+
+  // Derive full musicians array by combining allMusicians with current states
+  const musicians = useMemo(() => {
+    return allMusicians.map(m => ({
+      ...m,
+      state: state.musicianStates.get(m.id) ?? 'inactive',
+    }));
+  }, [allMusicians, state.musicianStates]);
 
   // Calculate musician states based on current phase
   const calculateMusicianStates = useCallback(
-    (bar: number, beat: number): Musician[] => {
+    (bar: number, beat: number): Map<number, MusicianState> => {
       const barsPerPhase = barsPerPhaseRef.current;
       const beatsPerPhase = barsPerPhase * BEATS_PER_BAR;
       const totalBeats = (bar - 1) * BEATS_PER_BAR + beat;
       const currentPhase = Math.floor((totalBeats - 1) / beatsPerPhase) + 1;
-
-      // Calculate if we're in the last bar of a phase (warning for next musician)
       const beatsIntoPhase = ((totalBeats - 1) % beatsPerPhase) + 1;
+      const barInPhase = Math.ceil(beatsIntoPhase / BEATS_PER_BAR);
       const isLastBarOfPhase = beatsIntoPhase > (barsPerPhase - 1) * BEATS_PER_BAR;
 
-      return config.musicians.map((musician, index) => {
-        const musicianNumber = index + 1;
+      // For sampling mode: recording starts at this bar within the phase
+      const recordingStartBar = barsPerPhase - RECORDING_BARS + 1;
+      // preparingToRecord is the bar before recording starts
+      const prepareBar = recordingStartBar - 1;
+
+      const newStates = new Map<number, MusicianState>();
+
+      allMusicians.forEach((musician) => {
+        const isVirtual = musician.isVirtual;
         let newState: MusicianState;
 
-        if (currentPhase < musicianNumber) {
-          // Not yet joined
-          if (currentPhase === musicianNumber - 1 && isLastBarOfPhase) {
-            // About to join next phase
-            newState = 'starting';
-          } else {
-            newState = 'inactive';
-          }
-        } else if (currentPhase <= totalMusicians) {
-          // Entry phase - the musician whose phase it is gets to solo
-          if (currentPhase === musicianNumber) {
-            newState = 'soloing';
-          } else {
+        if (isVirtual) {
+          const virtualIndex = allMusicians.filter(m => !m.isVirtual).length;
+          const virtualNumber = allMusicians.indexOf(musician) - virtualIndex + 1;
+          const virtualEntryPhase = realMusicianCount + virtualNumber;
+
+          if (currentPhase < virtualEntryPhase) {
+            newState = currentPhase === virtualEntryPhase - 1 && isLastBarOfPhase
+              ? 'starting' : 'inactive';
+          } else if (currentPhase === virtualEntryPhase) {
             newState = 'playing';
+          } else {
+            const soloRotationPhase = currentPhase - totalMusicians;
+            const soloistIndex = (soloRotationPhase - 1) % totalMusicians;
+            const myIndex = allMusicians.indexOf(musician);
+
+            if (myIndex === soloistIndex) {
+              newState = 'soloing';
+            } else {
+              const nextSoloistIndex = soloRotationPhase % totalMusicians;
+              newState = myIndex === nextSoloistIndex && isLastBarOfPhase
+                ? 'starting' : 'playing';
+            }
           }
         } else {
-          // Solo rotation phase (everyone has joined)
-          const soloRotationPhase = currentPhase - totalMusicians;
-          const soloistIndex = (soloRotationPhase - 1) % totalMusicians;
+          const realIndex = realMusicians.findIndex(m => m.id === musician.id);
+          const musicianNumber = realIndex + 1;
 
-          if (index === soloistIndex) {
-            newState = 'soloing';
-          } else {
-            // Check if this musician is about to solo
-            const nextSoloistIndex = soloRotationPhase % totalMusicians;
-            if (index === nextSoloistIndex && isLastBarOfPhase) {
-              newState = 'starting'; // About to solo
+          if (currentPhase < musicianNumber) {
+            newState = currentPhase === musicianNumber - 1 && isLastBarOfPhase
+              ? 'starting' : 'inactive';
+          } else if (currentPhase <= realMusicianCount) {
+            if (currentPhase === musicianNumber) {
+              // This musician's entry phase
+              if (samplingMode) {
+                // Sampling mode: warm-up -> prepare -> record -> play
+                if (barInPhase < prepareBar) {
+                  newState = 'playing'; // Warm-up
+                } else if (barInPhase === prepareBar) {
+                  newState = 'preparingToRecord'; // Warning: recording next bar
+                } else if (barInPhase >= recordingStartBar) {
+                  newState = 'recording'; // Recording for RECORDING_BARS
+                } else {
+                  newState = 'playing';
+                }
+              } else {
+                newState = 'soloing';
+              }
             } else {
               newState = 'playing';
+            }
+          } else if (samplingMode && currentPhase <= totalMusicians) {
+            newState = 'playing';
+          } else {
+            const rotationStartPhase = samplingMode ? totalMusicians : realMusicianCount;
+            const soloRotationPhase = currentPhase - rotationStartPhase;
+            const soloistIndex = (soloRotationPhase - 1) % totalMusicians;
+            const myIndex = allMusicians.indexOf(musician);
+
+            if (myIndex === soloistIndex) {
+              newState = 'soloing';
+            } else {
+              const nextSoloistIndex = soloRotationPhase % totalMusicians;
+              newState = myIndex === nextSoloistIndex && isLastBarOfPhase
+                ? 'starting' : 'playing';
             }
           }
         }
 
-        return { ...musician, state: newState };
+        newStates.set(musician.id, newState);
       });
+
+      return newStates;
     },
-    [config.musicians, totalMusicians]
+    [allMusicians, realMusicians, realMusicianCount, totalMusicians, samplingMode]
   );
 
   // Handle beat from metronome
@@ -99,27 +172,68 @@ export function useJamSession(config: SessionConfig) {
       const totalBeats = (bar - 1) * BEATS_PER_BAR + beat;
       const currentPhase = Math.floor((totalBeats - 1) / beatsPerPhase) + 1;
 
-      const updatedMusicians = calculateMusicianStates(bar, beat);
+      const newStates = calculateMusicianStates(bar, beat);
+
+      // Handle recording state transitions for sampling mode
+      if (samplingMode && samplingCallbacks) {
+        allMusicians.forEach((musician) => {
+          const prevState = state.musicianStates.get(musician.id);
+          const newState = newStates.get(musician.id);
+
+          if (newState === 'recording' && prevState !== 'recording') {
+            recordingMusicianRef.current = musician.id;
+            samplingCallbacks.onStartRecording?.(musician.id);
+          }
+          if (prevState === 'recording' && newState !== 'recording') {
+            samplingCallbacks.onStopRecording?.(musician.id);
+            recordingMusicianRef.current = null;
+          }
+          if (musician.isVirtual) {
+            if (newState === 'soloing' && prevState !== 'soloing') {
+              samplingCallbacks.onVirtualPlayerSolo?.(musician.id);
+            }
+            if (newState === 'playing' && prevState !== 'playing') {
+              samplingCallbacks.onVirtualPlayerPlay?.(musician.id);
+            }
+          }
+        });
+      }
 
       setState((prev) => ({
         ...prev,
         currentBeat: beat,
         currentBar: bar,
         currentPhase,
-        musicians: updatedMusicians,
+        musicianStates: newStates,
       }));
     },
-    [calculateMusicianStates]
+    [calculateMusicianStates, samplingMode, samplingCallbacks, allMusicians, state.musicianStates]
   );
 
-  const metronome = useMetronome({ bpm, onBeat });
+  // Check if any musician is currently recording - mute metronome during recording
+  const isRecording = useMemo(() => {
+    for (const musicianState of state.musicianStates.values()) {
+      if (musicianState === 'recording') return true;
+    }
+    return false;
+  }, [state.musicianStates]);
+
+  const metronome = useMetronome({ bpm, muted: isRecording, onBeat });
 
   const start = useCallback(() => {
-    // Reset musicians to initial state with first one soloing
-    const initialMusicians = config.musicians.map((m, index) => ({
-      ...m,
-      state: (index === 0 ? 'soloing' : 'inactive') as MusicianState,
-    }));
+    const initialStates = new Map<number, MusicianState>();
+    const realOnly = allMusicians.filter(m => !m.isVirtual);
+
+    // In sampling mode, first musician starts in "playing" (warm-up) mode
+    // Recording will start later based on bar position
+    realOnly.forEach((m, index) => {
+      initialStates.set(m.id, index === 0
+        ? (samplingMode ? 'playing' : 'soloing')
+        : 'inactive'
+      );
+    });
+
+    // Don't start recording immediately - it will be triggered by state transitions
 
     setState({
       isPlaying: true,
@@ -127,22 +241,28 @@ export function useJamSession(config: SessionConfig) {
       currentBeat: 1,
       currentBar: 1,
       currentPhase: 1,
-      musicians: initialMusicians,
+      musicianStates: initialStates,
     });
     metronome.start();
-  }, [config.musicians, metronome]);
+  }, [allMusicians, samplingMode, metronome]);
 
   const stop = useCallback(() => {
     metronome.stop();
+    if (recordingMusicianRef.current && samplingCallbacks?.onStopRecording) {
+      samplingCallbacks.onStopRecording(recordingMusicianRef.current);
+      recordingMusicianRef.current = null;
+    }
+    const inactiveStates = new Map<number, MusicianState>();
+    allMusicians.forEach(m => inactiveStates.set(m.id, 'inactive'));
     setState({
       isPlaying: false,
       isPaused: false,
       currentBeat: 1,
       currentBar: 1,
       currentPhase: 1,
-      musicians: config.musicians.map((m) => ({ ...m, state: 'inactive' as MusicianState })),
+      musicianStates: inactiveStates,
     });
-  }, [config.musicians, metronome]);
+  }, [allMusicians, samplingCallbacks, metronome]);
 
   const pause = useCallback(() => {
     metronome.pause();
@@ -167,15 +287,32 @@ export function useJamSession(config: SessionConfig) {
   // Calculate phase info for display
   const { currentPhase } = state;
   const phaseInfo = useMemo(() => {
+    if (samplingMode) {
+      if (currentPhase <= realMusicianCount) {
+        return `Recording ${currentPhase}/${realMusicianCount}`;
+      }
+      if (currentPhase <= totalMusicians) {
+        const virtualPhase = currentPhase - realMusicianCount;
+        const virtualCount = totalMusicians - realMusicianCount;
+        return `Adding Loop ${virtualPhase}/${virtualCount}`;
+      }
+      const soloRound = Math.floor((currentPhase - totalMusicians - 1) / totalMusicians) + 1;
+      return `Solo Round ${soloRound}`;
+    }
     if (currentPhase <= totalMusicians) {
       return `Entry Phase ${currentPhase}/${totalMusicians}`;
     }
     const soloRound = Math.floor((currentPhase - totalMusicians - 1) / totalMusicians) + 1;
     return `Solo Round ${soloRound}`;
-  }, [currentPhase, totalMusicians]);
+  }, [currentPhase, totalMusicians, realMusicianCount, samplingMode]);
 
   return {
-    ...state,
+    isPlaying: state.isPlaying,
+    isPaused: state.isPaused,
+    currentBeat: state.currentBeat,
+    currentBar: state.currentBar,
+    currentPhase: state.currentPhase,
+    musicians,
     phaseInfo,
     start,
     stop,
