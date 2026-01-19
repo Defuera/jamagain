@@ -319,5 +319,9 @@ export function useJamSession(
     pause,
     resume,
     togglePlayPause,
+    // Expose metronome timing for sample sync
+    getNextBarStartTime: metronome.getNextBarStartTime,
+    getSecondsPerBeat: metronome.getSecondsPerBeat,
+    getAudioContext: metronome.getAudioContext,
   };
 }

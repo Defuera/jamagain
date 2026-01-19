@@ -31,6 +31,11 @@ export function JamSession({ config: initialConfig, onStop }: JamSessionProps) {
   const virtualPlayersHook = useVirtualPlayers(realMusicianCount);
   const { playGetReady, playStart } = useAudioCues();
 
+  // Ref to store session timing functions (to avoid circular dependency)
+  const sessionTimingRef = useRef<{
+    getNextBarStartTime: () => number;
+  } | null>(null);
+
   // Combine real musicians with virtual players
   const allMusicians = useMemo(() => {
     return [...initialConfig.musicians, ...virtualPlayersHook.virtualPlayers];
@@ -52,7 +57,9 @@ export function JamSession({ config: initialConfig, onStop }: JamSessionProps) {
           if (virtualPlayersHook.canAddMoreVirtualPlayers) {
             const vp = virtualPlayersHook.addVirtualPlayer(sample);
             if (vp) {
-              sampler.playSample(sample, 0.5, true);
+              // Schedule playback to start at next bar for sync
+              const nextBarTime = sessionTimingRef.current?.getNextBarStartTime() ?? 0;
+              sampler.playSample(sample, 0.5, true, nextBarTime);
             }
           }
         }
@@ -75,6 +82,13 @@ export function JamSession({ config: initialConfig, onStop }: JamSessionProps) {
   }), [config.samplingMode, micPermissionGranted, sampler, virtualPlayersHook]);
 
   const session = useJamSession(config, allMusicians, samplingCallbacks);
+
+  // Update timing ref after session is created (in effect to avoid render-time ref access)
+  useEffect(() => {
+    sessionTimingRef.current = {
+      getNextBarStartTime: session.getNextBarStartTime,
+    };
+  }, [session.getNextBarStartTime]);
 
   // Track previous states to detect transitions
   const prevStatesRef = useRef<Map<number, string>>(new Map());

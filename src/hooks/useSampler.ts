@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { Sample } from '@/lib/types';
+import { useAudioContext } from './useAudioContext';
 
 interface ActivePlayback {
   sourceNode: AudioBufferSourceNode;
@@ -9,8 +10,51 @@ interface ActivePlayback {
   originalVolume: number;
 }
 
+// Trim silence from the beginning of an audio buffer
+function trimSilence(
+  ctx: AudioContext,
+  buffer: AudioBuffer,
+  threshold: number = 0.01
+): AudioBuffer {
+  const channelData = buffer.getChannelData(0);
+  let startSample = 0;
+
+  // Find first sample above threshold
+  for (let i = 0; i < channelData.length; i++) {
+    if (Math.abs(channelData[i]) > threshold) {
+      // Go back a tiny bit to avoid cutting the attack
+      startSample = Math.max(0, i - Math.floor(buffer.sampleRate * 0.005));
+      break;
+    }
+  }
+
+  // If no audio found or already starts with audio, return original
+  if (startSample === 0) {
+    return buffer;
+  }
+
+  // Create new buffer with trimmed audio
+  const newLength = buffer.length - startSample;
+  const newBuffer = ctx.createBuffer(
+    buffer.numberOfChannels,
+    newLength,
+    buffer.sampleRate
+  );
+
+  // Copy trimmed audio to new buffer
+  for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+    const oldData = buffer.getChannelData(channel);
+    const newData = newBuffer.getChannelData(channel);
+    for (let i = 0; i < newLength; i++) {
+      newData[i] = oldData[startSample + i];
+    }
+  }
+
+  return newBuffer;
+}
+
 export function useSampler() {
-  const audioContextRef = useRef<AudioContext | null>(null);
+  const { getAudioContext } = useAudioContext();
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
@@ -20,16 +64,6 @@ export function useSampler() {
   const [samples, setSamples] = useState<Sample[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [hasMicPermission, setHasMicPermission] = useState(false);
-
-  const getAudioContext = useCallback(() => {
-    if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContext();
-    }
-    if (audioContextRef.current.state === 'suspended') {
-      audioContextRef.current.resume();
-    }
-    return audioContextRef.current;
-  }, []);
 
   const requestMicPermission = useCallback(async (): Promise<boolean> => {
     try {
@@ -83,7 +117,9 @@ export function useSampler() {
 
         try {
           const arrayBuffer = await blob.arrayBuffer();
-          const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+          const rawBuffer = await ctx.decodeAudioData(arrayBuffer);
+          // Trim silence from the beginning to fix latency
+          const audioBuffer = trimSilence(ctx, rawBuffer);
 
           const sample: Sample = {
             id: `sample-${sourceMusician}-${Date.now()}`,
@@ -106,7 +142,8 @@ export function useSampler() {
   const playSample = useCallback((
     sample: Sample,
     volume: number = 1.0,
-    loop: boolean = true
+    loop: boolean = true,
+    startTime?: number // Optional: schedule playback at specific time
   ): string => {
     const ctx = getAudioContext();
 
@@ -129,7 +166,9 @@ export function useSampler() {
     sourceNode.connect(gainNode);
     gainNode.connect(ctx.destination);
 
-    sourceNode.start();
+    // Start at specified time or immediately
+    const when = startTime ?? ctx.currentTime;
+    sourceNode.start(when);
 
     activePlaybacksRef.current.set(sample.id, { sourceNode, gainNode, originalVolume: volume });
 
@@ -156,26 +195,27 @@ export function useSampler() {
       playback.originalVolume = volume;
       // Only apply if not muted
       if (!isMutedRef.current) {
-        playback.gainNode.gain.setValueAtTime(volume, audioContextRef.current?.currentTime || 0);
+        const ctx = getAudioContext();
+        playback.gainNode.gain.setValueAtTime(volume, ctx.currentTime);
       }
     }
-  }, []);
+  }, [getAudioContext]);
 
   const muteAllSamples = useCallback((): void => {
     isMutedRef.current = true;
-    const currentTime = audioContextRef.current?.currentTime || 0;
+    const ctx = getAudioContext();
     activePlaybacksRef.current.forEach((playback) => {
-      playback.gainNode.gain.setValueAtTime(0, currentTime);
+      playback.gainNode.gain.setValueAtTime(0, ctx.currentTime);
     });
-  }, []);
+  }, [getAudioContext]);
 
   const unmuteAllSamples = useCallback((): void => {
     isMutedRef.current = false;
-    const currentTime = audioContextRef.current?.currentTime || 0;
+    const ctx = getAudioContext();
     activePlaybacksRef.current.forEach((playback) => {
-      playback.gainNode.gain.setValueAtTime(playback.originalVolume, currentTime);
+      playback.gainNode.gain.setValueAtTime(playback.originalVolume, ctx.currentTime);
     });
-  }, []);
+  }, [getAudioContext]);
 
   const stopAllSamples = useCallback((): void => {
     activePlaybacksRef.current.forEach((playback) => {

@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useEffect } from 'react';
 import { BEATS_PER_BAR } from '@/lib/types';
+import { useAudioContext } from './useAudioContext';
 
 interface MetronomeConfig {
   bpm: number;
@@ -10,7 +11,7 @@ interface MetronomeConfig {
 }
 
 export function useMetronome({ bpm, muted = false, onBeat }: MetronomeConfig) {
-  const audioContextRef = useRef<AudioContext | null>(null);
+  const { getAudioContext } = useAudioContext();
   const nextBeatTimeRef = useRef(0);
   const currentBeatRef = useRef(1);
   const currentBarRef = useRef(1);
@@ -33,14 +34,6 @@ export function useMetronome({ bpm, muted = false, onBeat }: MetronomeConfig) {
   useEffect(() => {
     onBeatRef.current = onBeat;
   }, [onBeat]);
-
-  // Initialize audio context
-  const getAudioContext = useCallback(() => {
-    if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContext();
-    }
-    return audioContextRef.current;
-  }, []);
 
   // Play a clean click sound (like DAW metronomes)
   const playClick = useCallback((time: number, isAccent: boolean) => {
@@ -157,11 +150,31 @@ export function useMetronome({ bpm, muted = false, onBeat }: MetronomeConfig) {
       if (timerIdRef.current !== null) {
         clearTimeout(timerIdRef.current);
       }
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-      }
+      // Don't close shared audio context
     };
   }, []);
 
-  return { start, stop, pause, resume };
+  // Get the time of the next bar start (beat 1)
+  const getNextBarStartTime = useCallback(() => {
+    const ctx = getAudioContext();
+    const secondsPerBeat = 60.0 / bpmRef.current;
+    const currentTime = ctx.currentTime;
+
+    // Calculate beats until next bar
+    let beatsUntilBar = BEATS_PER_BAR - currentBeatRef.current + 1;
+    if (beatsUntilBar === BEATS_PER_BAR + 1) beatsUntilBar = 1; // We're at beat 1
+
+    // Time of next bar = next scheduled beat + beats until bar start
+    const timeUntilNextScheduledBeat = Math.max(0, nextBeatTimeRef.current - currentTime);
+    const timeUntilBarStart = timeUntilNextScheduledBeat + (beatsUntilBar - 1) * secondsPerBeat;
+
+    return currentTime + timeUntilBarStart;
+  }, [getAudioContext]);
+
+  // Get seconds per beat for loop duration calculation
+  const getSecondsPerBeat = useCallback(() => {
+    return 60.0 / bpmRef.current;
+  }, []);
+
+  return { start, stop, pause, resume, getNextBarStartTime, getSecondsPerBeat, getAudioContext };
 }
