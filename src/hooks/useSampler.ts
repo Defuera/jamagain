@@ -8,6 +8,7 @@ interface ActivePlayback {
   sourceNode: AudioBufferSourceNode;
   gainNode: GainNode;
   originalVolume: number;
+  isMuted: boolean;
 }
 
 // Trim silence from the beginning of an audio buffer
@@ -170,7 +171,7 @@ export function useSampler() {
     const when = startTime ?? ctx.currentTime;
     sourceNode.start(when);
 
-    activePlaybacksRef.current.set(sample.id, { sourceNode, gainNode, originalVolume: volume });
+    activePlaybacksRef.current.set(sample.id, { sourceNode, gainNode, originalVolume: volume, isMuted: false });
 
     sourceNode.onended = () => {
       activePlaybacksRef.current.delete(sample.id);
@@ -193,13 +194,31 @@ export function useSampler() {
     const playback = activePlaybacksRef.current.get(sampleId);
     if (playback) {
       playback.originalVolume = volume;
-      // Only apply if not muted
-      if (!isMutedRef.current) {
+      // Only apply if not muted (globally or individually)
+      if (!isMutedRef.current && !playback.isMuted) {
         const ctx = getAudioContext();
         playback.gainNode.gain.setValueAtTime(volume, ctx.currentTime);
       }
     }
   }, [getAudioContext]);
+
+  const toggleSampleMute = useCallback((sampleId: string): void => {
+    const playback = activePlaybacksRef.current.get(sampleId);
+    if (playback) {
+      const ctx = getAudioContext();
+      playback.isMuted = !playback.isMuted;
+      if (playback.isMuted || isMutedRef.current) {
+        playback.gainNode.gain.setValueAtTime(0, ctx.currentTime);
+      } else {
+        playback.gainNode.gain.setValueAtTime(playback.originalVolume, ctx.currentTime);
+      }
+    }
+  }, [getAudioContext]);
+
+  const isSampleMuted = useCallback((sampleId: string): boolean => {
+    const playback = activePlaybacksRef.current.get(sampleId);
+    return playback?.isMuted ?? false;
+  }, []);
 
   const muteAllSamples = useCallback((): void => {
     isMutedRef.current = true;
@@ -213,7 +232,10 @@ export function useSampler() {
     isMutedRef.current = false;
     const ctx = getAudioContext();
     activePlaybacksRef.current.forEach((playback) => {
-      playback.gainNode.gain.setValueAtTime(playback.originalVolume, ctx.currentTime);
+      // Respect individual mute states when unmuting globally
+      if (!playback.isMuted) {
+        playback.gainNode.gain.setValueAtTime(playback.originalVolume, ctx.currentTime);
+      }
     });
   }, [getAudioContext]);
 
@@ -242,6 +264,8 @@ export function useSampler() {
     playSample,
     stopSample,
     setSampleVolume,
+    toggleSampleMute,
+    isSampleMuted,
     muteAllSamples,
     unmuteAllSamples,
     stopAllSamples,

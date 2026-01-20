@@ -1,6 +1,6 @@
 'use client';
 
-import { Musician } from '@/lib/types';
+import { Musician, SoloRecordingState } from '@/lib/types';
 
 interface JamCircleProps {
   musicians: Musician[];
@@ -9,6 +9,7 @@ interface JamCircleProps {
   isPlaying: boolean;
   isPaused: boolean;
   onTogglePlayPause: () => void;
+  soloRecordingState?: SoloRecordingState;
 }
 
 export function JamCircle({
@@ -18,7 +19,9 @@ export function JamCircle({
   isPlaying,
   isPaused,
   onTogglePlayPause,
+  soloRecordingState,
 }: JamCircleProps) {
+  const isSoloMode = musicians.length === 1;
   // Use viewBox for scaling, actual size controlled by CSS
   const viewBoxSize = 400;
   const center = viewBoxSize / 2;
@@ -84,8 +87,109 @@ export function JamCircle({
         viewBox={`0 0 ${viewBoxSize} ${viewBoxSize}`}
         preserveAspectRatio="xMidYMid meet"
       >
-        {/* Sectors */}
-        {musicians.map((musician, index) => {
+        {/* Solo mode: Full circle */}
+        {isSoloMode && musicians[0] && (
+          <g>
+            {/* Full donut/annulus */}
+            <circle
+              cx={center}
+              cy={center}
+              r={(radius + innerRadius) / 2}
+              fill="none"
+              stroke={musicians[0].color}
+              strokeWidth={radius - innerRadius}
+              style={{
+                opacity: soloRecordingState === 'recording' ? 1 : 0.85,
+                transition: 'all 0.3s ease',
+              }}
+              className={soloRecordingState === 'recording' || soloRecordingState === 'ready' ? 'animate-pulse' : ''}
+            />
+
+            {/* Stroke overlay for recording states */}
+            {soloRecordingState === 'recording' && (
+              <circle
+                cx={center}
+                cy={center}
+                r={radius}
+                fill="none"
+                stroke="#ef4444"
+                strokeWidth={4}
+              />
+            )}
+            {soloRecordingState === 'ready' && (
+              <circle
+                cx={center}
+                cy={center}
+                r={radius}
+                fill="none"
+                stroke="#eab308"
+                strokeWidth={3}
+              />
+            )}
+
+            {/* Musician name at top of circle */}
+            <text
+              x={center}
+              y={center - radius + 40}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fill="white"
+              fontSize="20"
+              fontWeight="bold"
+              style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}
+            >
+              {musicians[0].name}
+            </text>
+
+            {/* Solo recording state indicator */}
+            {soloRecordingState === 'warmup' && (
+              <text
+                x={center}
+                y={center - radius + 65}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill="#9ca3af"
+                fontSize="14"
+                style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}
+              >
+                Get ready...
+              </text>
+            )}
+            {soloRecordingState === 'ready' && (
+              <text
+                x={center}
+                y={center - radius + 65}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill="#eab308"
+                fontSize="16"
+                fontWeight="bold"
+                style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}
+                className="animate-pulse"
+              >
+                READY
+              </text>
+            )}
+            {soloRecordingState === 'recording' && (
+              <text
+                x={center}
+                y={center - radius + 65}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill="#ef4444"
+                fontSize="16"
+                fontWeight="bold"
+                style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}
+                className="animate-pulse"
+              >
+                ● RECORDING
+              </text>
+            )}
+          </g>
+        )}
+
+        {/* Multi-musician mode: Sectors */}
+        {!isSoloMode && musicians.map((musician, index) => {
           const path = getSectorPath(index, musicians.length);
           const labelPos = getLabelPosition(index, musicians.length);
           const styles = getStateStyles(musician.state, musician.isVirtual);

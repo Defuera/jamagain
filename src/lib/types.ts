@@ -18,6 +18,15 @@ export interface Sample {
   createdAt: number;
 }
 
+export interface SoloLoop {
+  id: string;
+  color: string;
+  sampleId: string;
+  isPlaying: boolean;
+}
+
+export type SoloRecordingState = 'idle' | 'warmup' | 'ready' | 'recording';
+
 export interface SessionConfig {
   musicians: Musician[];
   bpm: number;
@@ -48,7 +57,7 @@ export const MUSICIAN_COLORS = [
 export const DEFAULT_BPM = 120;
 export const DEFAULT_BARS_PER_PHASE = 4;
 export const BEATS_PER_BAR = 4;
-export const MIN_MUSICIANS = 2;
+export const MIN_MUSICIANS = 1;
 export const MAX_MUSICIANS = 8;
 export const MIN_BPM = 60;
 export const MAX_BPM = 200;
