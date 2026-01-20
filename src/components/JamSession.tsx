@@ -52,14 +52,29 @@ export function JamSession({ config: initialConfig, onStop }: JamSessionProps) {
       if (config.samplingMode) {
         const sample = await sampler.stopRecording(musicianId);
         if (sample) {
-          setRecordedSamples(prev => [...prev, sample]);
-          // Add virtual player after recording
-          if (virtualPlayersHook.canAddMoreVirtualPlayers) {
-            const vp = virtualPlayersHook.addVirtualPlayer(sample);
-            if (vp) {
-              // Schedule playback to start at next bar for sync
-              const nextBarTime = sessionTimingRef.current?.getNextBarStartTime() ?? 0;
-              sampler.playSample(sample, 0.5, true, nextBarTime);
+          // Check if this is a re-recording (virtual player already exists for this musician)
+          const existingVp = virtualPlayersHook.getVirtualPlayerBySourceMusician(musicianId);
+
+          if (existingVp) {
+            // Re-recording: stop old sample playback, update virtual player, start new sample
+            sampler.stopSample(existingVp.sampleId);
+            // Remove old sample from recorded samples and add new one
+            setRecordedSamples(prev => [
+              ...prev.filter(s => s.id !== existingVp.sampleId),
+              sample
+            ]);
+            virtualPlayersHook.updateVirtualPlayerSample(musicianId, sample);
+            // Start playing immediately
+            sampler.playSample(sample, 0.5, true);
+          } else {
+            // Initial recording: add new virtual player
+            setRecordedSamples(prev => [...prev, sample]);
+            if (virtualPlayersHook.canAddMoreVirtualPlayers) {
+              const vp = virtualPlayersHook.addVirtualPlayer(sample);
+              if (vp) {
+                // Start playing immediately
+                sampler.playSample(sample, 0.5, true);
+              }
             }
           }
         }
@@ -81,7 +96,7 @@ export function JamSession({ config: initialConfig, onStop }: JamSessionProps) {
     },
   }), [config.samplingMode, micPermissionGranted, sampler, virtualPlayersHook]);
 
-  const session = useJamSession(config, allMusicians, samplingCallbacks);
+  const session = useJamSession(config, allMusicians, samplingCallbacks, recordedSamples);
 
   // Update timing ref after session is created (in effect to avoid render-time ref access)
   useEffect(() => {

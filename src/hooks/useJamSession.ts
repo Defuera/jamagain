@@ -6,8 +6,10 @@ import {
   Musician,
   MusicianState,
   SessionConfig,
+  Sample,
   BEATS_PER_BAR,
   RECORDING_BARS,
+  PLAY_PHASES_BETWEEN_RECORDS,
 } from '@/lib/types';
 
 interface SessionState {
@@ -29,12 +31,22 @@ interface SamplingCallbacks {
 export function useJamSession(
   config: SessionConfig,
   allMusicians: Musician[],
-  samplingCallbacks?: SamplingCallbacks
+  samplingCallbacks?: SamplingCallbacks,
+  samples: Sample[] = []
 ) {
   const { bpm, samplingMode } = config;
   const realMusicians = config.musicians.filter(m => !m.isVirtual);
   const realMusicianCount = realMusicians.length;
   const totalMusicians = allMusicians.length;
+
+  // Find the musician whose sample is oldest (for re-recording selection)
+  const findOldestSampleMusician = useCallback((): number | null => {
+    if (samples.length === 0) return null;
+    const oldest = samples.reduce((oldest, current) =>
+      current.createdAt < oldest.createdAt ? current : oldest
+    );
+    return oldest.sourceMusician;
+  }, [samples]);
 
   // Use ref for barsPerPhase so changes take effect immediately
   const barsPerPhaseRef = useRef(config.barsPerPhase);
@@ -85,6 +97,25 @@ export function useJamSession(
 
       const newStates = new Map<number, MusicianState>();
 
+      // Determine if we're in a re-recording phase (continuous sampling mode)
+      let isReRecordingPhase = false;
+      let reRecordingMusicianId: number | null = null;
+      let effectiveSoloPhase = 0;
+
+      if (samplingMode && currentPhase > totalMusicians) {
+        const phasesSinceSetup = currentPhase - totalMusicians;
+        const cycleLength = PLAY_PHASES_BETWEEN_RECORDS + 1;
+        isReRecordingPhase = phasesSinceSetup % cycleLength === 0;
+
+        if (isReRecordingPhase) {
+          reRecordingMusicianId = findOldestSampleMusician();
+        } else {
+          // Calculate effective solo rotation phase (excluding recording phases)
+          const numRecordingPhases = Math.floor(phasesSinceSetup / cycleLength);
+          effectiveSoloPhase = phasesSinceSetup - numRecordingPhases;
+        }
+      }
+
       allMusicians.forEach((musician) => {
         const isVirtual = musician.isVirtual;
         let newState: MusicianState;
@@ -99,15 +130,18 @@ export function useJamSession(
               ? 'starting' : 'inactive';
           } else if (currentPhase === virtualEntryPhase) {
             newState = 'playing';
+          } else if (isReRecordingPhase) {
+            // During re-recording, virtual players just play
+            newState = 'playing';
           } else {
-            const soloRotationPhase = currentPhase - totalMusicians;
-            const soloistIndex = (soloRotationPhase - 1) % totalMusicians;
+            // Solo rotation using effective phase (excludes recording phases)
+            const soloistIndex = (effectiveSoloPhase - 1) % totalMusicians;
             const myIndex = allMusicians.indexOf(musician);
 
             if (myIndex === soloistIndex) {
               newState = 'soloing';
             } else {
-              const nextSoloistIndex = soloRotationPhase % totalMusicians;
+              const nextSoloistIndex = effectiveSoloPhase % totalMusicians;
               newState = myIndex === nextSoloistIndex && isLastBarOfPhase
                 ? 'starting' : 'playing';
             }
@@ -121,15 +155,14 @@ export function useJamSession(
               ? 'starting' : 'inactive';
           } else if (currentPhase <= realMusicianCount) {
             if (currentPhase === musicianNumber) {
-              // This musician's entry phase
+              // This musician's initial entry/recording phase
               if (samplingMode) {
-                // Sampling mode: warm-up -> prepare -> record -> play
                 if (barInPhase < prepareBar) {
-                  newState = 'playing'; // Warm-up
+                  newState = 'playing';
                 } else if (barInPhase === prepareBar) {
-                  newState = 'preparingToRecord'; // Warning: recording next bar
+                  newState = 'preparingToRecord';
                 } else if (barInPhase >= recordingStartBar) {
-                  newState = 'recording'; // Recording for RECORDING_BARS
+                  newState = 'recording';
                 } else {
                   newState = 'playing';
                 }
@@ -140,17 +173,33 @@ export function useJamSession(
               newState = 'playing';
             }
           } else if (samplingMode && currentPhase <= totalMusicians) {
+            // Virtual players joining phase - real players just play
+            newState = 'playing';
+          } else if (isReRecordingPhase && musician.id === reRecordingMusicianId) {
+            // This musician is re-recording
+            if (barInPhase < prepareBar) {
+              newState = 'playing';
+            } else if (barInPhase === prepareBar) {
+              newState = 'preparingToRecord';
+            } else if (barInPhase >= recordingStartBar) {
+              newState = 'recording';
+            } else {
+              newState = 'playing';
+            }
+          } else if (isReRecordingPhase) {
+            // During re-recording, non-recording players just play
             newState = 'playing';
           } else {
+            // Normal solo rotation
             const rotationStartPhase = samplingMode ? totalMusicians : realMusicianCount;
-            const soloRotationPhase = currentPhase - rotationStartPhase;
-            const soloistIndex = (soloRotationPhase - 1) % totalMusicians;
+            const soloPhase = samplingMode ? effectiveSoloPhase : currentPhase - rotationStartPhase;
+            const soloistIndex = (soloPhase - 1) % totalMusicians;
             const myIndex = allMusicians.indexOf(musician);
 
             if (myIndex === soloistIndex) {
               newState = 'soloing';
             } else {
-              const nextSoloistIndex = soloRotationPhase % totalMusicians;
+              const nextSoloistIndex = soloPhase % totalMusicians;
               newState = myIndex === nextSoloistIndex && isLastBarOfPhase
                 ? 'starting' : 'playing';
             }
@@ -162,7 +211,7 @@ export function useJamSession(
 
       return newStates;
     },
-    [allMusicians, realMusicians, realMusicianCount, totalMusicians, samplingMode]
+    [allMusicians, realMusicians, realMusicianCount, totalMusicians, samplingMode, findOldestSampleMusician]
   );
 
   // Handle beat from metronome
@@ -296,7 +345,18 @@ export function useJamSession(
         const virtualCount = totalMusicians - realMusicianCount;
         return `Adding Loop ${virtualPhase}/${virtualCount}`;
       }
-      const soloRound = Math.floor((currentPhase - totalMusicians - 1) / totalMusicians) + 1;
+      // Check if this is a re-recording phase
+      const phasesSinceSetup = currentPhase - totalMusicians;
+      const cycleLength = PLAY_PHASES_BETWEEN_RECORDS + 1;
+      const isReRecordingPhase = phasesSinceSetup % cycleLength === 0;
+      if (isReRecordingPhase) {
+        const reRecordCount = Math.floor(phasesSinceSetup / cycleLength);
+        return `Re-Recording #${reRecordCount}`;
+      }
+      // Calculate solo round excluding re-recording phases
+      const numRecordingPhases = Math.floor(phasesSinceSetup / cycleLength);
+      const effectivePlayPhases = phasesSinceSetup - numRecordingPhases;
+      const soloRound = Math.floor((effectivePlayPhases - 1) / totalMusicians) + 1;
       return `Solo Round ${soloRound}`;
     }
     if (currentPhase <= totalMusicians) {

@@ -54,3 +54,4 @@ export const MIN_BPM = 60;
 export const MAX_BPM = 200;
 export const VIRTUAL_PLAYERS_COUNT = 2;
 export const RECORDING_BARS = 2; // How many bars to record in sampling mode
+export const PLAY_PHASES_BETWEEN_RECORDS = 4; // Phases of play before next re-recording

@@ -6,6 +6,7 @@ import { Musician, Sample, MUSICIAN_COLORS, VIRTUAL_PLAYERS_COUNT } from '@/lib/
 interface VirtualPlayer extends Musician {
   isVirtual: true;
   sampleId: string;
+  sourceMusician: number; // Which real player this loop came from
 }
 
 export function useVirtualPlayers(realMusicianCount: number) {
@@ -27,6 +28,7 @@ export function useVirtualPlayers(realMusicianCount: number) {
       state: 'inactive',
       isVirtual: true,
       sampleId: sample.id,
+      sourceMusician: sample.sourceMusician,
     };
   }, [realMusicianCount]);
 
@@ -71,6 +73,20 @@ export function useVirtualPlayers(realMusicianCount: number) {
     return virtualPlayers.find(vp => vp.sampleId === sampleId);
   }, [virtualPlayers]);
 
+  const getVirtualPlayerBySourceMusician = useCallback((musicianId: number): VirtualPlayer | undefined => {
+    return virtualPlayers.find(vp => vp.sourceMusician === musicianId);
+  }, [virtualPlayers]);
+
+  const updateVirtualPlayerSample = useCallback((musicianId: number, newSample: Sample): void => {
+    setVirtualPlayers(prev =>
+      prev.map(vp =>
+        vp.sourceMusician === musicianId
+          ? { ...vp, sampleId: newSample.id }
+          : vp
+      )
+    );
+  }, []);
+
   const canAddMoreVirtualPlayers = virtualPlayers.length < VIRTUAL_PLAYERS_COUNT;
 
   return {
@@ -81,6 +97,8 @@ export function useVirtualPlayers(realMusicianCount: number) {
     updateAllVirtualPlayerStates,
     clearVirtualPlayers,
     getVirtualPlayerBySampleId,
+    getVirtualPlayerBySourceMusician,
+    updateVirtualPlayerSample,
     canAddMoreVirtualPlayers,
     setVirtualPlayers,
   };
