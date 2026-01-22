@@ -9,6 +9,7 @@ import { useAudioCues } from '@/hooks/useAudioCues';
 import { useSoloStorage } from '@/hooks/useSoloStorage';
 import { JamCircle } from './JamCircle';
 import { LoopPanel } from './LoopPanel';
+import { SoloTimeline } from './SoloTimeline';
 
 interface SoloSessionProps {
   config: SessionConfig;
@@ -279,6 +280,17 @@ export function SoloSession({ config: initialConfig, onStop }: SoloSessionProps)
         >
           {saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'saving' ? 'Saving...' : '💾 Save'}
         </button>
+      </div>
+
+      {/* Timeline track */}
+      <div className="pt-16">
+        <SoloTimeline
+          loops={loopsHook.loops}
+          currentBeat={session.currentBeat}
+          currentBar={session.currentBar}
+          recordingState={session.recordingState}
+          isPlaying={session.isPlaying}
+        />
       </div>
 
       {/* Main circle area */}

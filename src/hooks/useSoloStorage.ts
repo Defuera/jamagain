@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { SoloLoop, MUSICIAN_COLORS } from '@/lib/types';
+import { SoloLoop } from '@/lib/types';
 
 const DB_NAME = 'jam-solo-sessions';
 const DB_VERSION = 1;
