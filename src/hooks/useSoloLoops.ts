@@ -18,6 +18,12 @@ export function useSoloLoops() {
     return newLoop;
   }, [loops.length]);
 
+  const addLoopWithId = useCallback((id: string, color: string, sampleId: string, isPlaying: boolean): SoloLoop => {
+    const newLoop: SoloLoop = { id, color, sampleId, isPlaying };
+    setLoops(prev => [...prev, newLoop]);
+    return newLoop;
+  }, []);
+
   const toggleLoop = useCallback((loopId: string) => {
     setLoops(prev => prev.map(loop =>
       loop.id === loopId
@@ -45,6 +51,7 @@ export function useSoloLoops() {
   return {
     loops,
     addLoop,
+    addLoopWithId,
     toggleLoop,
     removeLoop,
     clearLoops,

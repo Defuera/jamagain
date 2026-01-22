@@ -6,6 +6,7 @@ import { useSoloSession } from '@/hooks/useSoloSession';
 import { useSoloLoops } from '@/hooks/useSoloLoops';
 import { useSampler } from '@/hooks/useSampler';
 import { useAudioCues } from '@/hooks/useAudioCues';
+import { useSoloStorage } from '@/hooks/useSoloStorage';
 import { JamCircle } from './JamCircle';
 import { LoopPanel } from './LoopPanel';
 
@@ -15,12 +16,15 @@ interface SoloSessionProps {
 }
 
 export function SoloSession({ config: initialConfig, onStop }: SoloSessionProps) {
+  const musician = initialConfig.musicians[0];
   const [bpm, setBpm] = useState(initialConfig.bpm);
   const [audioCuesEnabled, setAudioCuesEnabled] = useState(true);
 
   const sampler = useSampler();
   const loopsHook = useSoloLoops();
   const { playGetReady } = useAudioCues();
+  const storage = useSoloStorage();
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
   // Ref to track pending sample for loop creation
   const pendingSampleRef = useRef<Sample | null>(null);
@@ -49,9 +53,40 @@ export function SoloSession({ config: initialConfig, onStop }: SoloSessionProps)
     sampler.requestMicPermission();
   }, [sampler]);
 
-  // Auto-start first recording when session starts
+  // Load saved session if requested
+  const hasLoadedSavedRef = useRef(false);
+  useEffect(() => {
+    if (!initialConfig.savedSessionId || hasLoadedSavedRef.current) return;
+    hasLoadedSavedRef.current = true;
+
+    const loadSaved = async () => {
+      const audioContext = session.getAudioContext();
+      const loaded = await storage.loadSession(initialConfig.savedSessionId!, audioContext);
+      if (!loaded) return;
+
+      // Restore loops and samples
+      for (const savedLoop of loaded.session.loops) {
+        const audioBuffer = loaded.audioBuffers.get(savedLoop.id);
+        if (audioBuffer) {
+          // Add sample to sampler
+          const sample = sampler.addSampleFromBuffer(audioBuffer, 0);
+          // Add loop with the correct sample ID
+          loopsHook.addLoopWithId(savedLoop.id, savedLoop.color, sample.id, savedLoop.isPlaying);
+        }
+      }
+
+      // Update BPM to match saved session
+      setBpm(loaded.session.bpm);
+    };
+
+    loadSaved();
+  }, [initialConfig.savedSessionId, storage, session, sampler, loopsHook]);
+
+  // Auto-start first recording when session starts (unless loading saved session)
   const hasAutoStartedRef = useRef(false);
   useEffect(() => {
+    // Don't auto-start if loading a saved session
+    if (initialConfig.savedSessionId) return;
     if (session.isPlaying && !hasAutoStartedRef.current && loopsHook.loops.length === 0) {
       hasAutoStartedRef.current = true;
       // Start recording flow immediately (from bar 1)
@@ -60,7 +95,24 @@ export function SoloSession({ config: initialConfig, onStop }: SoloSessionProps)
     if (!session.isPlaying) {
       hasAutoStartedRef.current = false;
     }
-  }, [session.isPlaying, session, loopsHook.loops.length]);
+  }, [session.isPlaying, session, loopsHook.loops.length, initialConfig.savedSessionId]);
+
+  // Start playing loaded loops when session starts
+  const hasStartedPlaybackRef = useRef(false);
+  useEffect(() => {
+    if (!initialConfig.savedSessionId) return;
+    if (!session.isPlaying || hasStartedPlaybackRef.current) return;
+    if (loopsHook.loops.length === 0) return;
+
+    hasStartedPlaybackRef.current = true;
+    // Start playing all loops that should be playing
+    for (const loop of loopsHook.loops) {
+      const sample = sampler.samples.find(s => s.id === loop.sampleId);
+      if (sample && loop.isPlaying) {
+        sampler.playSample(sample, 1.0, true);
+      }
+    }
+  }, [session.isPlaying, loopsHook.loops, sampler, initialConfig.savedSessionId]);
 
   // Play audio cues for recording flow
   const prevRecordingStateRef = useRef(session.recordingState);
@@ -132,8 +184,24 @@ export function SoloSession({ config: initialConfig, onStop }: SoloSessionProps)
     setTimeout(() => session.start(), 50);
   }, [session, sampler, loopsHook]);
 
-  // Get the single musician
-  const musician = initialConfig.musicians[0];
+  // Handle save
+  const handleSave = useCallback(async () => {
+    if (loopsHook.loops.length === 0) return;
+    setSaveStatus('saving');
+    try {
+      await storage.saveSession(
+        bpm,
+        musician.name,
+        loopsHook.loops,
+        sampler.getSampleBuffer
+      );
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch (error) {
+      console.error('Failed to save session:', error);
+      setSaveStatus('idle');
+    }
+  }, [bpm, loopsHook.loops, sampler, storage, musician.name]);
 
   return (
     <div className="fixed inset-0 bg-gray-900 text-white overflow-hidden flex flex-col">
@@ -192,6 +260,25 @@ export function SoloSession({ config: initialConfig, onStop }: SoloSessionProps)
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Save button - top right corner */}
+      <div className="absolute top-4 right-4 z-10">
+        <button
+          onClick={handleSave}
+          disabled={loopsHook.loops.length === 0 || saveStatus === 'saving'}
+          className={`px-4 py-2 rounded-lg font-medium transition-colors backdrop-blur-sm ${
+            saveStatus === 'saved'
+              ? 'bg-green-600/70 text-green-100'
+              : saveStatus === 'saving'
+              ? 'bg-yellow-600/70 text-yellow-100'
+              : loopsHook.loops.length === 0
+              ? 'bg-gray-600/30 text-gray-500 cursor-not-allowed'
+              : 'bg-orange-600/70 text-orange-100 hover:bg-orange-600/90'
+          }`}
+        >
+          {saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'saving' ? 'Saving...' : '💾 Save'}
+        </button>
       </div>
 
       {/* Main circle area */}

@@ -257,6 +257,22 @@ export function useSampler() {
     return samples.find(s => s.sourceMusician === musicianId);
   }, [samples]);
 
+  const getSampleBuffer = useCallback((sampleId: string): AudioBuffer | undefined => {
+    const sample = samples.find(s => s.id === sampleId);
+    return sample?.audioBuffer;
+  }, [samples]);
+
+  const addSampleFromBuffer = useCallback((audioBuffer: AudioBuffer, sourceMusician: number): Sample => {
+    const sample: Sample = {
+      id: `sample-${sourceMusician}-${Date.now()}`,
+      sourceMusician,
+      audioBuffer,
+      createdAt: Date.now(),
+    };
+    setSamples(prev => [...prev, sample]);
+    return sample;
+  }, []);
+
   return {
     requestMicPermission,
     startRecording,
@@ -271,6 +287,8 @@ export function useSampler() {
     stopAllSamples,
     clearSamples,
     getSampleForMusician,
+    getSampleBuffer,
+    addSampleFromBuffer,
     samples,
     isRecording,
     hasMicPermission,

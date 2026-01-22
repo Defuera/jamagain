@@ -32,6 +32,7 @@ export interface SessionConfig {
   bpm: number;
   barsPerPhase: number;
   samplingMode: boolean;
+  savedSessionId?: string; // For solo mode - ID of saved session to load
 }
 
 export interface SessionState {

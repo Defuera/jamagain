@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Musician,
   SessionConfig,
@@ -12,6 +12,7 @@ import {
   MIN_BPM,
   MAX_BPM,
 } from '@/lib/types';
+import { useSoloStorage, SavedSoloSession } from '@/hooks/useSoloStorage';
 
 const STORAGE_KEY = 'jam-session-config';
 
@@ -53,6 +54,14 @@ interface SetupScreenProps {
 }
 
 export function SetupScreen({ onStart }: SetupScreenProps) {
+  const storage = useSoloStorage();
+  const [savedSessions, setSavedSessions] = useState<SavedSoloSession[]>([]);
+
+  // Check for saved solo sessions on mount
+  useEffect(() => {
+    storage.getAllSessions().then(setSavedSessions);
+  }, [storage]);
+
   // Load saved config with lazy initializers
   const [musicianCount, setMusicianCount] = useState(() => {
     const saved = loadSavedConfig();
@@ -113,6 +122,29 @@ export function SetupScreen({ onStart }: SetupScreenProps) {
       barsPerPhase,
       samplingMode,
     });
+  };
+
+  const handleContinueSavedSession = (session: SavedSoloSession) => {
+    const musicians: Musician[] = [{
+      id: 1,
+      name: session.musicianName,
+      color: MUSICIAN_COLORS[0],
+      state: 'inactive',
+      isVirtual: false,
+    }];
+
+    onStart({
+      musicians,
+      bpm: session.bpm,
+      barsPerPhase: DEFAULT_BARS_PER_PHASE,
+      samplingMode: false,
+      savedSessionId: session.id,
+    });
+  };
+
+  const handleDeleteSavedSession = async (sessionId: string) => {
+    await storage.deleteSession(sessionId);
+    setSavedSessions(prev => prev.filter(s => s.id !== sessionId));
   };
 
   return (
@@ -224,6 +256,43 @@ export function SetupScreen({ onStart }: SetupScreenProps) {
             </button>
           </div>
         </div>
+
+        {/* Saved Sessions */}
+        {savedSessions.length > 0 && (
+          <div className="space-y-3">
+            <div className="text-purple-400 font-medium">Saved Solo Sessions</div>
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {savedSessions.map((session) => (
+                <div
+                  key={session.id}
+                  className="p-3 bg-purple-900/30 border border-purple-700/50 rounded-lg flex items-center justify-between gap-3"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-white truncate">{session.name}</div>
+                    <div className="text-xs text-gray-400">
+                      {session.loops.length} loops · {session.bpm} BPM
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleContinueSavedSession(session)}
+                      className="px-3 py-1 bg-purple-600 hover:bg-purple-500 rounded text-sm font-medium transition-colors"
+                    >
+                      Load
+                    </button>
+                    <button
+                      onClick={() => handleDeleteSavedSession(session.id)}
+                      className="text-gray-500 hover:text-red-400 transition-colors"
+                      title="Delete session"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Buttons */}
         <div className="space-y-3">
